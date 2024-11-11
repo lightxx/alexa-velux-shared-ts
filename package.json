@@ -1,6 +1,6 @@
 {
   "name": "velux-alexa-integration-shared",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A shared NPM package for managing Velux Alexa integration, including token management and API requests.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -19,7 +19,7 @@
     "Smart Home",
     "AWS"
   ],
-  "author": "Tom Heuberger",
+  "author": "Thomas Heuberger",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.9.0",

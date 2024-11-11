@@ -144,15 +144,13 @@ async function warmUp(): Promise<void> {
 }
 
 async function persistUserId(
-  code: string,
-  userId: string,
-  dynamoTable: string
+  code: string
 ): Promise<void> {
   const params = {
     TableName: dynamoTable,
     Item: {
       id: code,
-      userId: userId,
+      userId: state.storedUserId,
     },
   };
   const dynamoDb = new AWS.DynamoDB.DocumentClient();
