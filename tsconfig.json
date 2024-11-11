@@ -3,7 +3,7 @@
     "declaration": true,
     "rootDir": "./src",
     "target": "ES2020",
-    "module": "CommonJS",
+    "module": "ESNext",
     "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
@@ -13,8 +13,8 @@
     "strictFunctionTypes": true,
     "alwaysStrict": true,
     "noImplicitThis": true,
-    "resolveJsonModule": true,
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "moduleResolution": "Node"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules"]
