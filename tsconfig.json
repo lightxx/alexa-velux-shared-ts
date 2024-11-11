@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "declaration": true,
+    "rootDir": "./src",
     "target": "ES2020",
     "module": "CommonJS",
     "strict": true,
