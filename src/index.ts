@@ -1,14 +1,47 @@
 import AWS from "aws-sdk";
 import qs from "qs";
-import axios from "axios";
+import axios, { AxiosError, AxiosHeaders, AxiosResponse } from "axios";
 
 const dynamoTable = "alexaveluxdb";
+
+interface RequestHeaders {
+  Authorization: string;
+  "Content-Type": string;
+}
+
+interface Module {
+  scenario: string;
+  bridge: string;
+  id: string;
+}
+
+interface Home {
+  id: string;
+  modules: Module[];
+}
+
+interface RequestBody {
+  home: Home;
+  app_version: string;
+}
 
 interface State {
   tokenData: TokenData | null;
   userData: UserData | null;
   settingsData: SettingsData | null;
   storedUserId: string | null;
+}
+
+interface Token {
+  refresh_token: string;
+  access_token: string;
+}
+
+interface ErrorResponseData {
+  error: {
+    code: number;
+    message: string;
+  };
 }
 
 interface TokenData {
@@ -92,7 +125,7 @@ async function makeTokenRequest(
   }
 }
 
-async function persistToken(token: any): Promise<void> {
+async function persistToken(token: Token): Promise<void> {
   if (!state.storedUserId) throw new Error("User ID is not stored");
   const params = {
     TableName: dynamoTable,
@@ -130,8 +163,10 @@ async function createDynamoDBContext(): Promise<AWS.DynamoDB.DocumentClient> {
   return dynamoDB;
 }
 
-async function loadDBData(fromKey: string): Promise<any> {
-  let cacheData;
+async function loadDBData(
+  fromKey: string
+): Promise<SettingsData | UserData | TokenData | null> {
+  let cacheData: SettingsData | UserData | TokenData | null = null;
 
   if (fromKey.startsWith("token-")) {
     cacheData = state.tokenData;
@@ -181,9 +216,13 @@ async function loadDBData(fromKey: string): Promise<any> {
 
 async function warmUp(): Promise<void> {
   if (!state.storedUserId) throw new Error("User ID is not set");
-  state.settingsData = await loadDBData("settings");
-  state.userData = await loadDBData("config-" + state.storedUserId);
-  state.tokenData = await loadDBData("token-" + state.storedUserId);
+  state.settingsData = (await loadDBData("settings")) as SettingsData;
+  state.userData = (await loadDBData(
+    "config-" + state.storedUserId
+  )) as UserData;
+  state.tokenData = (await loadDBData(
+    "token-" + state.storedUserId
+  )) as TokenData;
 }
 
 async function persistUserId(
@@ -202,24 +241,40 @@ async function persistUserId(
   await context.put(params).promise();
 }
 
-async function postRequest(scenario: string): Promise<any> {
+async function handleTokenRefreshIfNeeded(
+  error: AxiosError<ErrorResponseData>
+): Promise<boolean> {
+  if (error.response && error.response.status === 403) {
+    const responseData = error.response.data;
+
+    let tokenType: "password" | "refresh_token" | undefined;
+
+    if (isTokenExpired(responseData)) {
+      console.log("Access token expired, refreshing token...");
+      tokenType = "refresh_token";
+    } else if (isTokenInvalid(responseData)) {
+      console.log("Invalid access token, creating initial token request...");
+      tokenType = "password";
+    }
+
+    if (tokenType) {
+      await makeTokenRequest(tokenType);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function postRequest(scenario: string): Promise<AxiosResponse<any>> {
   try {
     return await makePostRequest(scenario);
-  } catch (error: any) {
-    if (error.response && error.response.status === 403) {
-      const responseData = error.response.data;
-
-      let tokenType: "password" | "refresh_token" | undefined;
-      if (isTokenExpired(responseData)) {
-        console.log("Access token expired, refreshing token...");
-        tokenType = "refresh_token";
-      } else if (isTokenInvalid(responseData)) {
-        console.log("Invalid access token, creating initial token request...");
-        tokenType = "password";
-      }
-
-      if (tokenType) {
-        await makeTokenRequest(tokenType);
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error)) {
+      const shouldRetry = await handleTokenRefreshIfNeeded(
+        error as AxiosError<ErrorResponseData>
+      );
+      if (shouldRetry) {
         return await makePostRequest(scenario);
       }
     }
@@ -228,12 +283,12 @@ async function postRequest(scenario: string): Promise<any> {
   }
 }
 
-async function makePostRequest(scenario: string): Promise<any> {
+async function makePostRequest(scenario: string): Promise<AxiosResponse<any>> {
   const { url, headers, jsonObject } = await constructRequestParams(scenario);
   return await axios.post(url, jsonObject, { headers });
 }
 
-function isTokenExpired(responseData: any): boolean {
+function isTokenExpired(responseData: ErrorResponseData): boolean {
   return (
     responseData.error &&
     responseData.error.code === 3 &&
@@ -241,7 +296,7 @@ function isTokenExpired(responseData: any): boolean {
   );
 }
 
-function isTokenInvalid(responseData: any): boolean {
+function isTokenInvalid(responseData: ErrorResponseData): boolean {
   return (
     responseData.error &&
     responseData.error.code === 2 &&
@@ -251,19 +306,20 @@ function isTokenInvalid(responseData: any): boolean {
 
 async function constructRequestParams(
   scenario: string
-): Promise<{ url: string; headers: any; jsonObject: any }> {
+): Promise<{ url: string; headers: AxiosHeaders; jsonObject: RequestBody }> {
   if (!state.settingsData || !state.userData || !state.tokenData) {
     throw new Error("State data is incomplete");
   }
 
   console.log("State: " + JSON.stringify(state, null, 2));
 
-  const url = state.settingsData.base_url + state.settingsData.sync_url;
-  const headers = {
-    Authorization: "Bearer " + state.tokenData.AccessToken,
-    "Content-Type": "application/json",
-  };
-  const jsonObject = {
+  const url: string = state.settingsData.base_url + state.settingsData.sync_url;
+
+  const headers = new AxiosHeaders();
+  headers.set("Authorization", `Bearer ${state.tokenData.AccessToken}`);
+  headers.set("Content-Type", "application/json");
+
+  const jsonObject: RequestBody = {
     home: {
       id: state.userData.home_id,
       modules: [
