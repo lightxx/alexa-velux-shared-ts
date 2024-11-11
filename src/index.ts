@@ -71,32 +71,14 @@ async function persistToken(token: Token): Promise<void> {
       AccessToken: token.access_token,
     },
   };
-  const context = await createDynamoDBContext();
-  await context.put(params).promise();
+
+  const dynamoDb = new AWS.DynamoDB.DocumentClient();
+  await dynamoDb.put(params).promise();
 
   state.tokenData = {
     RefreshToken: token.refresh_token,
     AccessToken: token.access_token,
   };
-}
-
-async function createDynamoDBContext(): Promise<AWS.DynamoDB.DocumentClient> {
-  const STS = new AWS.STS({ apiVersion: "2011-06-15" });
-  const credentials = await STS.assumeRole({
-    RoleArn: "arn:aws:iam::329599638967:role/HostedAlexaRole",
-    RoleSessionName: "AlexaVeluxSession",
-  }).promise();
-
-  if (!credentials.Credentials) throw new Error("Failed to assume role");
-
-  const dynamoDB = new AWS.DynamoDB.DocumentClient({
-    apiVersion: "2012-08-10",
-    accessKeyId: credentials.Credentials.AccessKeyId,
-    secretAccessKey: credentials.Credentials.SecretAccessKey,
-    sessionToken: credentials.Credentials.SessionToken,
-  });
-
-  return dynamoDB;
 }
 
 async function loadDBData(
@@ -119,8 +101,8 @@ async function loadDBData(
       Key: { id: fromKey },
     };
 
-    const context = await createDynamoDBContext();
-    const data = await context.get(params).promise();
+    const dynamoDb = new AWS.DynamoDB.DocumentClient();
+    const data = await dynamoDb.get(params).promise();
 
     if (data.Item) {
       if (fromKey.startsWith("token-")) {
@@ -173,8 +155,8 @@ async function persistUserId(
       userId: userId,
     },
   };
-  const context = await createDynamoDBContext();
-  await context.put(params).promise();
+  const dynamoDb = new AWS.DynamoDB.DocumentClient();
+  await dynamoDb.put(params).promise();
 }
 
 async function handleTokenRefreshIfNeeded(
