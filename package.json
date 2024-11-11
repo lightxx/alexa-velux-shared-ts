@@ -1,0 +1,34 @@
+{
+  "name": "velux-alexa-integration-shared",
+  "version": "1.0.0",
+  "description": "A shared NPM package for managing Velux Alexa integration, including token management and API requests.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lightxx/alexa-velux-shared-ts.git"
+  },
+  "keywords": [
+    "Velux",
+    "Alexa",
+    "integration",
+    "Smart Home",
+    "AWS"
+  ],
+  "author": "Tom Heuberger",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/qs": "^6.9.17",
+    "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1692.0",
+    "axios": "^1.7.7",
+    "qs": "^6.13.0"
+  }
+}
