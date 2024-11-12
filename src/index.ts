@@ -252,4 +252,4 @@ async function constructRequestParams(
   return { url, headers, jsonObject };
 }
 
-export { persistUserId, postRequest, warmUp, state };
+export { persistUserId, postRequest, warmUp, makeTokenRequest, state };
