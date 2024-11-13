@@ -11,9 +11,16 @@ interface Home {
   id: string;
   modules: Module[];
 }
-export interface RequestBody {
-  home: Home;
+export interface BaseRequestBody {
   app_version: string;
+}
+export interface ActionRequestBody extends BaseRequestBody {
+  home: Home;
+}
+
+export interface HomeRequestBody extends BaseRequestBody {
+  sync_measurements: Boolean;
+  app_type: String;
 }
 export interface State {
   tokenData: TokenData | null;
@@ -38,8 +45,8 @@ export interface TokenData {
 export interface UserData {
   username: string;
   password: string;
-  home_id: string;
-  bridge: string;
+  home_id: string | null;
+  bridge: string | null;
 }
 export interface SettingsData {
   base_url: string;
@@ -52,4 +59,6 @@ export interface SettingsData {
   user_prefix: string;
   sync_url: string;
   app_version: string;
+  app_type: string;
+  homesdata_url: string;
 }
