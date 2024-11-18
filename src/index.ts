@@ -213,14 +213,22 @@ async function handleTokenRefreshIfNeeded(error: AxiosError<ErrorResponseData>):
   return false;
 }
 
-async function postRequest(scenario: string): Promise<AxiosResponse<any>> {
+async function postRequest(scenario: string, actionType: 'makePost' | 'homeInfo'): Promise<AxiosResponse<any>> {
   try {
-    return await makePostRequest(scenario);
+    if (actionType === 'homeInfo') {
+      return await getHomeInfo();
+    } else {
+      return await makePostRequest(scenario);
+    }
   } catch (error: unknown) {
     if (axios.isAxiosError(error)) {
       const shouldRetry = await handleTokenRefreshIfNeeded(error as AxiosError<ErrorResponseData>);
       if (shouldRetry) {
-        return await makePostRequest(scenario);
+        if (actionType === 'homeInfo') {
+          return await getHomeInfo();
+        } else {
+          return await makePostRequest(scenario);
+        }
       }
     }
 
@@ -304,4 +312,4 @@ async function constructRequestParams(
   return { url, headers, jsonObject };
 }
 
-export { persistUserId, postRequest, warmUp, makeTokenRequest, getHomeInfo, findKeyByValue, state };
+export { persistUserId, postRequest, warmUp, makeTokenRequest, findKeyByValue, state };
