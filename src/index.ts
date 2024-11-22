@@ -11,17 +11,22 @@ import {
   ActionRequestBody,
   BaseRequestBody,
   HomeRequestBody,
-} from "./interfaces/interfaces";
+  Table,
+  AccessToken,
+  SkillType,
+  VeluxCredentials,
+} from "./interfaces/interfaces.mjs";
+import { ConfigurationEntry } from "./interfaces/ConfigurationEntry.mjs";
 
-const dynamoTable = "alexaveluxdb";
-const indexName = 'userID-index';
-const attributeName = 'userId';
+const indexName = "userID-index";
+const attributeName = "userId";
 
 const state: State = {
   tokenData: null,
   userData: null,
   settingsData: null,
   storedUserId: null,
+  skillType: null,
 };
 
 enum Action {
@@ -29,7 +34,7 @@ enum Action {
   HOME_INFO = "home-info",
 }
 
-async function makeTokenRequest(grantType: "password" | "refresh_token"): Promise<void> {
+async function makeTokenRequest(grantType: "password" | "refresh_token"): Promise<TokenData> {
   try {
     if (!state.settingsData) throw new Error("Settings data is missing");
     const url = state.settingsData.base_url + state.settingsData.token_url;
@@ -64,58 +69,104 @@ async function makeTokenRequest(grantType: "password" | "refresh_token"): Promis
     }
 
     console.log(`trying to get ${grantType} token from Velux backend...`);
-    const response = await axios.post(url, body, { headers });
+    const response = await axios.post<Token>(url, body, { headers });
     console.log(`Successfully got ${grantType} token from Velux backend: ${JSON.stringify(response.data)}`);
-    await persistToken(response.data);
+
+    state.tokenData = {
+      RefreshToken: response.data.refresh_token,
+      AccessToken: response.data.access_token,
+    };
+
+    const credentials: VeluxCredentials = {
+      ...response.data, 
+      username: state.userData!.username,
+      password: state.userData!.password,
+    };
+
+    await persistToken(credentials);
+
+    return state.tokenData;
   } catch (error) {
-    console.error(`Error making the ${grantType} token request:`, error);
+    const msg = `Error making the ${grantType} token request: ${error}`;
+    console.error(msg);
+    throw msg;
   }
 }
 
-async function persistToken(token: Token): Promise<void> {
-  if (!state.storedUserId) throw new Error("User ID is not stored");
-  const params = {
-    TableName: dynamoTable,
-    Item: {
-      id: "token-" + state.storedUserId,
-      RefreshToken: token.refresh_token,
-      AccessToken: token.access_token,
-    },
-  };
+async function persistToken(veluxCredentials: VeluxCredentials): Promise<void> {
+  if (!state.skillType) {
+    throw "state.skillType must be set to persist the token!"
+  }
 
   const dynamoDb = new AWS.DynamoDB.DocumentClient();
-  await dynamoDb.put(params).promise();
 
-  state.tokenData = {
-    RefreshToken: token.refresh_token,
-    AccessToken: token.access_token,
-  };
+  if (state.skillType = SkillType.Custom) {
+    if (!state.storedUserId) {
+      throw "state.storedUserId must be set to persist the token!";
+    }
+    const params = {
+      TableName: Table.CONFIG,
+      Item: {
+        id: "token-" + state.storedUserId,
+        RefreshToken: veluxCredentials.refresh_token,
+        AccessToken: veluxCredentials.access_token,
+      },
+    };
+    await dynamoDb.put(params).promise();
+  } else {
+    const params = {
+      TableName: Table.USER,
+      Key: {
+        userid:veluxCredentials.username, 
+      },
+      UpdateExpression: "SET access_token = :accessToken, refresh_token = :refreshToken",
+      ExpressionAttributeValues: {
+        ":accessToken": veluxCredentials.access_token, 
+        ":refreshToken": veluxCredentials.refresh_token, 
+      },
+      ConditionExpression: "attribute_exists(userid)", 
+      ReturnValues: "ALL_NEW", 
+    };
+
+    dynamoDb.update(params, (err, data) => {
+      if (err) {
+        console.error("Error updating item:", err);
+      } else {
+        console.log("Successfully updated item:", data.Attributes);
+      }
+    });
+  }
 }
 
 async function findKeyByValue(userId: string) {
-  return await findKeyByValueUsingGSI(dynamoTable, indexName, attributeName, userId);
+  return await findKeyByValueUsingGSI(Table.CONFIG, indexName, attributeName, userId);
 }
 
-async function findKeyByValueUsingGSI(tableName: string, indexName: string, attributeName: string, attributeValue: string): Promise<string | null> {
+async function findKeyByValueUsingGSI(
+  tableName: string,
+  indexName: string,
+  attributeName: string,
+  attributeValue: string
+): Promise<string | null> {
   const params = {
     TableName: tableName,
-    IndexName: indexName, 
+    IndexName: indexName,
     KeyConditionExpression: "#attr = :value",
     ExpressionAttributeNames: {
-      "#attr": attributeName
+      "#attr": attributeName,
     },
     ExpressionAttributeValues: {
-      ":value": attributeValue
+      ":value": attributeValue,
     },
-    ProjectionExpression: "id"
+    ProjectionExpression: "id",
   };
 
   const dynamoDb = new AWS.DynamoDB.DocumentClient();
   const data = await dynamoDb.query(params).promise();
   if (data.Items && data.Items.length > 0) {
-    return data.Items[0].id; 
+    return data.Items[0].id;
   }
-  return null; 
+  return null;
 }
 
 async function loadDBData(fromKey: string): Promise<SettingsData | UserData | TokenData | null> {
@@ -132,7 +183,7 @@ async function loadDBData(fromKey: string): Promise<SettingsData | UserData | To
   if (!cacheData) {
     console.log(`Loading ${fromKey} data from DynamoDB...`);
     const params = {
-      TableName: dynamoTable,
+      TableName: Table.CONFIG,
       Key: { id: fromKey },
     };
 
@@ -170,17 +221,28 @@ async function loadDBData(fromKey: string): Promise<SettingsData | UserData | To
 }
 
 async function warmUp(): Promise<void> {
-  if (!state.storedUserId) throw new Error("User ID is not set");
+  state.skillType = SkillType.Custom;
   state.settingsData = (await loadDBData("settings")) as SettingsData;
-  state.userData = (await loadDBData("config-" + state.storedUserId)) as UserData;
+  if (state.storedUserId) {
+    state.userData = (await loadDBData("config-" + state.storedUserId)) as UserData;
+  }
   if (state.userData) {
     state.tokenData = (await loadDBData("token-" + state.storedUserId)) as TokenData;
   }
 }
 
+async function warmUpSmartHome(token: string): Promise<void> {
+  state.skillType = SkillType.SmartHome
+  state.settingsData = (await loadDBData("settings")) as SettingsData;
+
+  const credentials = await getVeluxUserCredentials(token);
+  state.userData = credentials;
+  state.tokenData = { RefreshToken: credentials.refresh_token!, AccessToken: credentials.access_token! };
+}
+
 async function persistUserId(code: string): Promise<void> {
   const params = {
-    TableName: dynamoTable,
+    TableName: Table.CONFIG,
     Item: {
       id: code,
       userId: state.storedUserId,
@@ -191,6 +253,8 @@ async function persistUserId(code: string): Promise<void> {
 }
 
 async function handleTokenRefreshIfNeeded(error: AxiosError<ErrorResponseData>): Promise<boolean> {
+  console.log("handleTokenRefreshIfNeeded was called with: " + JSON.stringify(error, null, 2));
+
   if (error.response && error.response.status === 403) {
     const responseData = error.response.data;
 
@@ -213,35 +277,59 @@ async function handleTokenRefreshIfNeeded(error: AxiosError<ErrorResponseData>):
   return false;
 }
 
-async function postRequest(scenario: string, actionType: 'makePost' | 'homeInfo'): Promise<AxiosResponse<any>> {
+async function retryIfNeeded<T>(action: () => Promise<T>): Promise<T> {
   try {
-    if (actionType === 'homeInfo') {
-      return await getHomeInfo();
-    } else {
-      return await makePostRequest(scenario);
-    }
+    return await action();
   } catch (error: unknown) {
     if (axios.isAxiosError(error)) {
       const shouldRetry = await handleTokenRefreshIfNeeded(error as AxiosError<ErrorResponseData>);
       if (shouldRetry) {
-        if (actionType === 'homeInfo') {
-          return await getHomeInfo();
-        } else {
-          return await makePostRequest(scenario);
-        }
+        return await action();
       }
     }
-
     throw error;
   }
 }
 
-async function getHomeInfo(): Promise<AxiosResponse<any>> {
+async function getVeluxUserCredentials(token: string): Promise<UserData> {
+  let params = {
+    TableName: Table.TOKEN,
+    Key: { token: token },
+  };
+
+  const dynamoDb = new AWS.DynamoDB.DocumentClient();
+  const tokenData = await dynamoDb.get(params).promise();
+
+  if (!tokenData.Item) {
+    throw "Error retrieving data for the specified token " + token;
+  }
+
+  const accessToken = tokenData.Item as AccessToken;
+
+  const lookupParams = {
+    TableName: Table.USER,
+    Key: { userid: accessToken.veluxUserId },
+  };
+
+  const userData = await dynamoDb.get(lookupParams).promise();
+
+  if (!userData.Item) {
+    throw "Error retrieving Velux user credentials for the specified user " + accessToken.veluxUserId;
+  }
+
+  const user = userData.Item as UserData;
+
+  console.log("Loaded user data from DynamoDB: " + JSON.stringify(user, null, 2));
+
+  return user;
+}
+
+async function getHomeInfo(): Promise<AxiosResponse<ConfigurationEntry>> {
   const { url, headers, jsonObject } = await constructRequestParams(Action.HOME_INFO);
   return await axios.post(url, jsonObject, { headers });
 }
 
-async function makePostRequest(scenario: string): Promise<AxiosResponse<any>> {
+async function sendScenarioRequest(scenario: string): Promise<AxiosResponse<any>> {
   const { url, headers, jsonObject } = await constructRequestParams(Action.RUN_SCENARIO, scenario);
   return await axios.post(url, jsonObject, { headers });
 }
@@ -312,4 +400,24 @@ async function constructRequestParams(
   return { url, headers, jsonObject };
 }
 
-export { persistUserId, postRequest, warmUp, makeTokenRequest, findKeyByValue, state };
+async function getHomeInfoWithRetry(): Promise<AxiosResponse<ConfigurationEntry>> {
+  return retryIfNeeded(() => getHomeInfo());
+}
+
+async function sendScenarioRequestWithRetry(scenario: string): Promise<AxiosResponse<any>> {
+  return retryIfNeeded(() => sendScenarioRequest(scenario));
+}
+
+export {
+  persistUserId,
+  warmUp,
+  warmUpSmartHome,
+  makeTokenRequest,
+  findKeyByValue,
+  getHomeInfoWithRetry,
+  sendScenarioRequestWithRetry,
+  getVeluxUserCredentials,
+  state,
+  ConfigurationEntry,
+  Table,
+};
