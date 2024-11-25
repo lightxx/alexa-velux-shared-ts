@@ -15,6 +15,7 @@ import {
   AccessToken,
   SkillType,
   VeluxCredentials,
+  HomeStatusRequestBody,
 } from "./interfaces/interfaces.mjs";
 import { ConfigurationEntry } from "./interfaces/ConfigurationEntry.mjs";
 
@@ -32,6 +33,7 @@ const state: State = {
 enum Action {
   RUN_SCENARIO = "run-scenario",
   HOME_INFO = "home-info",
+  HOME_STATUS = "home-status",
 }
 
 async function makeTokenRequest(grantType: "password" | "refresh_token"): Promise<TokenData> {
@@ -328,6 +330,11 @@ async function getHomeInfo(): Promise<AxiosResponse<ConfigurationEntry>> {
   const { url, headers, jsonObject } = await constructRequestParams(Action.HOME_INFO);
   return await axios.post(url, jsonObject, { headers });
 }
+async function getHomeStatus(): Promise<AxiosResponse<ConfigurationEntry>> {
+  const { url, headers, jsonObject } = await constructRequestParams(Action.HOME_STATUS);
+  return await axios.post(url, jsonObject, { headers });
+}
+
 
 async function sendScenarioRequest(scenario: string): Promise<AxiosResponse<any>> {
   const { url, headers, jsonObject } = await constructRequestParams(Action.RUN_SCENARIO, scenario);
@@ -393,6 +400,14 @@ async function constructRequestParams(
       url = state.settingsData.base_url + state.settingsData.homesdata_url;
       break;
 
+      case Action.HOME_STATUS:
+        const statusRequestBody: HomeStatusRequestBody = {
+          app_version: state.settingsData.app_version,
+          home_id: state.userData.home_id!,
+        };
+        jsonObject = statusRequestBody;
+        url = state.settingsData.base_url + state.settingsData.status_url;
+        break;
     default:
       throw new Error("Invalid action type");
   }
@@ -402,6 +417,10 @@ async function constructRequestParams(
 
 async function getHomeInfoWithRetry(): Promise<AxiosResponse<ConfigurationEntry>> {
   return retryIfNeeded(() => getHomeInfo());
+}
+
+async function getHomeStatusWithRetry(): Promise<AxiosResponse<ConfigurationEntry>> {
+  return retryIfNeeded(() => getHomeStatus());
 }
 
 async function sendScenarioRequestWithRetry(scenario: string): Promise<AxiosResponse<any>> {
@@ -416,6 +435,7 @@ export {
   findKeyByValue,
   getHomeInfoWithRetry,
   sendScenarioRequestWithRetry,
+  getHomeStatusWithRetry,
   getVeluxUserCredentials,
   state,
   ConfigurationEntry,

@@ -7,8 +7,8 @@ export enum Table {
 }
 
 export enum SkillType {
-  Custom,
-  SmartHome
+  Custom = "CustomSkill",
+  SmartHome = "SmartHomeSkill"
 }
 
 interface Module {
@@ -26,6 +26,9 @@ export interface BaseRequestBody {
   app_version: string;
 }
 
+export interface HomeStatusRequestBody extends BaseRequestBody {
+  home_id: string;
+}
 export interface ActionRequestBody extends BaseRequestBody {
   home: Home;
 }
@@ -94,4 +97,5 @@ export interface SettingsData {
   app_version: string;
   app_type: string;
   homesdata_url: string;
+  status_url: string;
 }

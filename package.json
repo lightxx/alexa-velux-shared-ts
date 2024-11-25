@@ -1,6 +1,6 @@
 {
   "name": "velux-alexa-integration-shared",
-  "version": "1.0.33",
+  "version": "1.0.34",
   "description": "A shared NPM package for managing Velux Alexa integration, including token management and API requests.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
