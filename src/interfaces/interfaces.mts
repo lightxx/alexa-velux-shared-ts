@@ -73,12 +73,6 @@ export interface VeluxCredentials {
   access_token: string | null;
   refresh_token: string | null;
 }
-
-export interface UserCredentials {
-  userid: string;
-  password: string;
-}
-
 export interface UserData extends VeluxCredentials {
   home_id: string | null;
   bridge: string | null;

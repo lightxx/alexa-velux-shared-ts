@@ -18,6 +18,7 @@ import {
   HomeStatusRequestBody,
 } from "./interfaces/interfaces.mjs";
 import { ConfigurationEntry } from "./interfaces/ConfigurationEntry.mjs";
+import { HomeStatus } from "./interfaces/HomeStatus.mjs";
 
 const indexName = "userID-index";
 const attributeName = "userId";
@@ -71,6 +72,7 @@ async function makeTokenRequest(grantType: "password" | "refresh_token"): Promis
     }
 
     console.log(`trying to get ${grantType} token from Velux backend...`);
+    console.log(`url: ${url}, body: ${body}, headers: ${JSON.stringify(headers)}`);
     const response = await axios.post<Token>(url, body, { headers });
     console.log(`Successfully got ${grantType} token from Velux backend: ${JSON.stringify(response.data)}`);
 
@@ -102,7 +104,7 @@ async function persistToken(veluxCredentials: VeluxCredentials): Promise<void> {
 
   const dynamoDb = new AWS.DynamoDB.DocumentClient();
 
-  if (state.skillType = SkillType.Custom) {
+  if (state.skillType === SkillType.Custom) {
     if (!state.storedUserId) {
       throw "state.storedUserId must be set to persist the token!";
     }
@@ -119,14 +121,14 @@ async function persistToken(veluxCredentials: VeluxCredentials): Promise<void> {
     const params = {
       TableName: Table.USER,
       Key: {
-        userid:veluxCredentials.username, 
+        username:veluxCredentials.username, 
       },
       UpdateExpression: "SET access_token = :accessToken, refresh_token = :refreshToken",
       ExpressionAttributeValues: {
         ":accessToken": veluxCredentials.access_token, 
         ":refreshToken": veluxCredentials.refresh_token, 
       },
-      ConditionExpression: "attribute_exists(userid)", 
+      ConditionExpression: "attribute_exists(username)", 
       ReturnValues: "ALL_NEW", 
     };
 
@@ -258,6 +260,7 @@ async function handleTokenRefreshIfNeeded(error: AxiosError<ErrorResponseData>):
   console.log("handleTokenRefreshIfNeeded was called with: " + JSON.stringify(error, null, 2));
 
   if (error.response && error.response.status === 403) {
+    console.log("error.response.data is: " + JSON.stringify(error.response.data, null, 2));
     const responseData = error.response.data;
 
     let tokenType: "password" | "refresh_token" | undefined;
@@ -283,7 +286,7 @@ async function retryIfNeeded<T>(action: () => Promise<T>): Promise<T> {
   try {
     return await action();
   } catch (error: unknown) {
-    if (axios.isAxiosError(error)) {
+    if (axios.isAxiosError(error)) {      
       const shouldRetry = await handleTokenRefreshIfNeeded(error as AxiosError<ErrorResponseData>);
       if (shouldRetry) {
         return await action();
@@ -310,7 +313,7 @@ async function getVeluxUserCredentials(token: string): Promise<UserData> {
 
   const lookupParams = {
     TableName: Table.USER,
-    Key: { userid: accessToken.veluxUserId },
+    Key: { username: accessToken.veluxUserId },
   };
 
   const userData = await dynamoDb.get(lookupParams).promise();
@@ -330,11 +333,10 @@ async function getHomeInfo(): Promise<AxiosResponse<ConfigurationEntry>> {
   const { url, headers, jsonObject } = await constructRequestParams(Action.HOME_INFO);
   return await axios.post(url, jsonObject, { headers });
 }
-async function getHomeStatus(): Promise<AxiosResponse<ConfigurationEntry>> {
+async function getHomeStatus(): Promise<AxiosResponse<HomeStatus>> {
   const { url, headers, jsonObject } = await constructRequestParams(Action.HOME_STATUS);
   return await axios.post(url, jsonObject, { headers });
 }
-
 
 async function sendScenarioRequest(scenario: string): Promise<AxiosResponse<any>> {
   const { url, headers, jsonObject } = await constructRequestParams(Action.RUN_SCENARIO, scenario);
@@ -342,11 +344,11 @@ async function sendScenarioRequest(scenario: string): Promise<AxiosResponse<any>
 }
 
 function isTokenExpired(responseData: ErrorResponseData): boolean {
-  return responseData.error && responseData.error.code === 3 && responseData.error.message === "Access token expired";
+  return responseData.error && responseData.error.code === 3;
 }
 
 function isTokenInvalid(responseData: ErrorResponseData): boolean {
-  return responseData.error && responseData.error.code === 2 && responseData.error.message === "Invalid access_token";
+  return responseData.error && responseData.error.code === 2;
 }
 
 async function constructRequestParams(
@@ -419,7 +421,7 @@ async function getHomeInfoWithRetry(): Promise<AxiosResponse<ConfigurationEntry>
   return retryIfNeeded(() => getHomeInfo());
 }
 
-async function getHomeStatusWithRetry(): Promise<AxiosResponse<ConfigurationEntry>> {
+async function getHomeStatusWithRetry(): Promise<AxiosResponse<HomeStatus>> {
   return retryIfNeeded(() => getHomeStatus());
 }
 
