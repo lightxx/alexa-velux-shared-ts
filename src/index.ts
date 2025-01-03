@@ -118,6 +118,7 @@ async function persistToken(veluxCredentials: VeluxCredentials): Promise<void> {
     };
     await dynamoDb.put(params).promise();
   } else {
+   
     const params = {
       TableName: Table.USER,
       Key: {
@@ -131,6 +132,8 @@ async function persistToken(veluxCredentials: VeluxCredentials): Promise<void> {
       ConditionExpression: "attribute_exists(username)", 
       ReturnValues: "ALL_NEW", 
     };
+
+    console.log("Trying to update DB with: " + JSON.stringify(params, null, 2))
 
     dynamoDb.update(params, (err, data) => {
       if (err) {
